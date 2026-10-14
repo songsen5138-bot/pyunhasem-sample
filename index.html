@@ -474,7 +474,7 @@ const EMBEDDED = (() => { const el = document.getElementById(EMBED_ID); if (!el)
      자료 키를 풀어내는 과정입니다. 비밀번호 없이는 자료를 읽을 수 없습니다.
    · 관리자: 자료 키(DEK)+결과 키(RK) / 열람자: 결과 키(RK)만 보유
    ===================================================================== */
-const APP = { fmt: 'pyunhasem-vault', ver: 1, iter: 600000, credit: '' };
+const APP = { fmt: 'pyunhasem-vault', ver: 1, iter: 600000, credit: '作 song seung ki' };
 const GRADE_KEYS = ['1','2','3','4','5','6','교담희망','교담비희망'];
 const GRADE_OPTS = ['1','2','3','4','5','6','교담희망','교담비희망','휴직'];
 
@@ -865,110 +865,6 @@ function writeXlsx(sheets) {
   );
   return zipStore(files, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
-/* 복합 문서(CFB) 파일 만들기: 암호 건 엑셀 파일의 겉 상자. entries = [{ path: ['저장소', …, '스트림'], data: Uint8Array }] */
-function writeCfb(entries) {
-  const SS = 512, MS = 64, CUT = 4096, END = 0xFFFFFFFE, FREE = 0xFFFFFFFF, FATS = 0xFFFFFFFD, NONE = 0xFFFFFFFF;
-  const root = { name: 'Root Entry', type: 5, kids: [] };
-  for (const e of entries) {
-    let cur = root;
-    e.path.slice(0, -1).forEach(n => { let k = cur.kids.find(x => x.name === n); if (!k) cur.kids.push(k = { name: n, type: 1, kids: [] }); cur = k; });
-    cur.kids.push({ name: e.path[e.path.length - 1], type: 2, data: e.data });
-  }
-  const all = []; const walk = n => { n.id = all.length; all.push(n); (n.kids || []).forEach(walk); }; walk(root);
-  // 형제끼리 이름 순(짧은 이름 먼저, 같으면 대문자로 비교)으로 균형 잡힌 레드블랙 나무
-  const up = n => n.name.toUpperCase(), cmp = (a, b) => a.name.length - b.name.length || (up(a) < up(b) ? -1 : up(a) > up(b) ? 1 : 0);
-  all.forEach(n => {
-    if (!n.kids?.length) return;
-    const ks = [...n.kids].sort(cmp), depth = new Map();
-    const build = (lo, hi, d) => { if (lo > hi) return null; const m = (lo + hi) >> 1, k = ks[m]; depth.set(k, d); k.L = build(lo, m - 1, d + 1); k.R = build(m + 1, hi, d + 1); return k; };
-    n.child = build(0, ks.length - 1, 0);
-    const maxD = Math.max(...depth.values()), full = [...depth.values()].filter(d => d === maxD).length === 2 ** maxD;
-    ks.forEach(k => k.red = !full && depth.get(k) === maxD);
-  });
-  const streams = all.filter(n => n.type === 2), small = streams.filter(n => n.data.length < CUT), big = streams.filter(n => n.data.length >= CUT);
-  // 작은 스트림은 미니 스트림(64바이트 단위)에
-  const miniFat = []; let miniLen = 0;
-  small.forEach(n => { const c = Math.ceil(n.data.length / MS); n.start = c ? miniFat.length : END; for (let i = 0; i < c; i++) miniFat.push(i === c - 1 ? END : miniFat.length + 1); n.mini = miniLen; miniLen += c * MS; n.size = n.data.length; });
-  const miniData = new Uint8Array(miniLen); small.forEach(n => miniData.set(n.data, n.mini));
-  const secs = len => Math.ceil(len / SS), parts = [], fat = [];
-  const chain = cnt => { const st = cnt ? fat.length : END; for (let i = 0; i < cnt; i++) fat.push(i === cnt - 1 ? END : fat.length + 1); return st; };
-  root.start = miniLen ? chain(secs(miniLen)) : END; root.size = miniLen; if (miniLen) parts.push(miniData);
-  big.forEach(n => { n.start = chain(secs(n.data.length)); n.size = n.data.length; parts.push(n.data); });
-  const dirCnt = Math.ceil(all.length / 4), dirStart = chain(dirCnt);
-  const dir = new Uint8Array(dirCnt * SS), dv = new DataView(dir.buffer);
-  for (let i = 0; i < dirCnt * 4; i++) {
-    const o = i * 128, n = all[i];
-    [68, 72, 76].forEach(k => dv.setUint32(o + k, NONE, true));
-    if (!n) continue;
-    for (let j = 0; j < n.name.length; j++) dv.setUint16(o + j * 2, n.name.charCodeAt(j), true);
-    dv.setUint16(o + 64, (n.name.length + 1) * 2, true); dir[o + 66] = n.type; dir[o + 67] = n.red ? 0 : 1;
-    if (n.L) dv.setUint32(o + 68, n.L.id, true); if (n.R) dv.setUint32(o + 72, n.R.id, true); if (n.child) dv.setUint32(o + 76, n.child.id, true);
-    if (n.type !== 1) { dv.setUint32(o + 116, n.start ?? END, true); dv.setUint32(o + 120, n.size || 0, true); }
-  }
-  parts.push(dir);
-  const mfCnt = Math.ceil(miniFat.length * 4 / SS), mfStart = mfCnt ? chain(mfCnt) : END;
-  if (mfCnt) { const m = new DataView(new ArrayBuffer(mfCnt * SS)); for (let i = 0; i < mfCnt * 128; i++) m.setUint32(i * 4, i < miniFat.length ? miniFat[i] : FREE, true); parts.push(new Uint8Array(m.buffer)); }
-  let fatCnt = 1; while (Math.ceil((fat.length + fatCnt) / 128) > fatCnt) fatCnt++;
-  if (fatCnt > 109) throw new Error('파일이 너무 큽니다.');
-  const fatStart = fat.length; for (let i = 0; i < fatCnt; i++) fat.push(FATS);
-  const fv = new DataView(new ArrayBuffer(fatCnt * SS)); for (let i = 0; i < fatCnt * 128; i++) fv.setUint32(i * 4, i < fat.length ? fat[i] : FREE, true);
-  parts.push(new Uint8Array(fv.buffer));
-  const hd = new DataView(new ArrayBuffer(SS));
-  [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1].forEach((b, i) => hd.setUint8(i, b));
-  hd.setUint16(24, 0x3E, true); hd.setUint16(26, 3, true); hd.setUint16(28, 0xFFFE, true); hd.setUint16(30, 9, true); hd.setUint16(32, 6, true);
-  hd.setUint32(44, fatCnt, true); hd.setUint32(48, dirStart, true); hd.setUint32(56, CUT, true); hd.setUint32(60, mfStart, true); hd.setUint32(64, mfCnt, true); hd.setUint32(68, END, true);
-  for (let i = 0; i < 109; i++) hd.setUint32(76 + i * 4, i < fatCnt ? fatStart + i : FREE, true);
-  const out = [new Uint8Array(hd.buffer)];
-  parts.forEach(u => { out.push(u); if (u.length % SS) out.push(new Uint8Array(SS - u.length % SS)); });
-  return new Blob(out, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-}
-/* 엑셀 파일에 열기 암호 걸기 (MS Office 표준 Agile 암호화: AES-256 · SHA-512 · 10만 회) — 엑셀에서 열 때 암호를 물어봄 */
-async function encryptOffice(pkg, pw) {
-  const cat = (...a) => { const r = new Uint8Array(a.reduce((s, x) => s + x.length, 0)); let o = 0; a.forEach(x => { r.set(x, o); o += x.length; }); return r; };
-  const u32 = n => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, n, true); return b; };
-  const hex = h => new Uint8Array(h.match(/../g).map(x => parseInt(x, 16)));
-  const sha = async (...a) => new Uint8Array(await crypto.subtle.digest('SHA-512', cat(...a)));
-  const pad = d => d.length % 16 ? cat(d, new Uint8Array(16 - d.length % 16)) : d;
-  const cbc = async (key, iv, d) => { const k = await crypto.subtle.importKey('raw', key, 'AES-CBC', false, ['encrypt']); d = pad(d); return new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, k, d)).subarray(0, d.length); };   // 자동 채움 블록은 버림
-  const u16s = t => { const b = new Uint8Array(t.length * 2), v = new DataView(b.buffer); for (let i = 0; i < t.length; i++) v.setUint16(i * 2, t.charCodeAt(i), true); return b; };
-  const lp = t => { const b = u16s(t); return cat(u32(b.length), b, new Uint8Array((4 - b.length % 4) % 4)); };
-  const keySalt = rand(16), pwSalt = rand(16), secret = rand(32), verIn = rand(16), hmacKey = rand(64);
-  const segs = [];
-  for (let i = 0, b = 0; i < pkg.length; i += 4096, b++) segs.push(await cbc(secret, (await sha(keySalt, u32(b))).subarray(0, 16), pkg.subarray(i, i + 4096)));
-  const encPkg = cat(u32(pkg.length), u32(0), ...segs);
-  let h = await sha(pwSalt, u16s(pw.normalize('NFC')));
-  for (let i = 0; i < 100000; i++) h = await sha(u32(i), h);
-  const dk = async blk => (await sha(h, hex(blk))).subarray(0, 32);
-  const encVerIn = await cbc(await dk('fea7d2763b4b9e79'), pwSalt, verIn);
-  const encVerHash = await cbc(await dk('d7aa0f6d3061344e'), pwSalt, await sha(verIn));
-  const encKey = await cbc(await dk('146e0be7abacd0d6'), pwSalt, secret);
-  const encHmacKey = await cbc(secret, (await sha(keySalt, hex('5fb2ad010cb9e1f6'))).subarray(0, 16), hmacKey);
-  const hk = await crypto.subtle.importKey('raw', hmacKey, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign']);
-  const encHmac = await cbc(secret, (await sha(keySalt, hex('a0677f02b22c8433'))).subarray(0, 16), new Uint8Array(await crypto.subtle.sign('HMAC', hk, encPkg)));
-  const A = 'saltSize="16" blockSize="16" keyBits="256" hashSize="64" cipherAlgorithm="AES" cipherChaining="ChainingModeCBC" hashAlgorithm="SHA512"';
-  const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<encryption xmlns="http://schemas.microsoft.com/office/2006/encryption" xmlns:p="http://schemas.microsoft.com/office/2006/keyEncryptor/password" xmlns:c="http://schemas.microsoft.com/office/2006/keyEncryptor/certificate"><keyData ${A} saltValue="${b64(keySalt)}"/><dataIntegrity encryptedHmacKey="${b64(encHmacKey)}" encryptedHmacValue="${b64(encHmac)}"/><keyEncryptors><keyEncryptor uri="http://schemas.microsoft.com/office/2006/keyEncryptor/password"><p:encryptedKey spinCount="100000" ${A} saltValue="${b64(pwSalt)}" encryptedVerifierHashInput="${b64(encVerIn)}" encryptedVerifierHashValue="${b64(encVerHash)}" encryptedKeyValue="${b64(encKey)}"/></keyEncryptor></keyEncryptors></encryption>`;
-  const DS = '\x06DataSpaces', v100 = cat(u32(0x10001), u32(0x10001), u32(0x10001)), tid = lp('{FF9A3F03-56EF-4613-BDD5-5A41C1D07246}');
-  const mapEntry = cat(u32(1), u32(0), lp('EncryptedPackage'), lp('StrongEncryptionDataSpace'));
-  return writeCfb([
-    { path: [DS, 'Version'], data: cat(lp('Microsoft.Container.DataSpaces'), v100) },
-    { path: [DS, 'DataSpaceMap'], data: cat(u32(8), u32(1), u32(mapEntry.length + 4), mapEntry) },
-    { path: [DS, 'DataSpaceInfo', 'StrongEncryptionDataSpace'], data: cat(u32(8), u32(1), lp('StrongEncryptionTransform')) },
-    { path: [DS, 'TransformInfo', 'StrongEncryptionTransform', '\x06Primary'], data: cat(u32(8 + tid.length), u32(1), tid, lp('Microsoft.Container.EncryptionTransform'), v100, u32(0), u32(0), u32(0), u32(4)) },
-    { path: ['EncryptionInfo'], data: cat(new Uint8Array([4, 0, 4, 0]), u32(0x40), enc.encode(xml)) },
-    { path: ['EncryptedPackage'], data: encPkg },
-  ]);
-}
-/* 내려받기 전에 관리자 비밀번호를 한 번 더 받아 확인 → 그 비밀번호를 파일 열기 암호로 씀 */
-function askAdminPw(title, what) {
-  return modal({ title, body: `<div style="font-size:14px;color:var(--text2);margin-bottom:12px">${what} 파일은 <b>관리자 비밀번호</b>로 잠가서 내려받습니다.<br>파일을 열 때 같은 비밀번호를 넣으세요.</div>
-    <div class="field"><label>관리자 비밀번호</label><input class="inp" type="password" name="pw" autocomplete="current-password"></div>`,
-    actions: [{ label: '취소', value: null }, { label: '암호 걸고 내려받기', cls: 'primary', handler: async form => {
-      const pw = form.elements.pw.value; if (!pw) throw new Error('비밀번호를 입력하세요.');
-      const a = S.vault.accounts.find(x => x.id === S.user.id);
-      if (a) { try { await openAccount(a, pw); } catch { throw new Error('비밀번호가 맞지 않습니다.'); } }   // 샘플판(계정 없음)은 넣은 비밀번호를 그대로 씀
-      return pw;
-    } }] });
-}
 
 /* ---------- 기본 자료 ---------- */
 function defaultGradeTable() {
@@ -976,7 +872,7 @@ function defaultGradeTable() {
   for (let y = 2023; y <= 2027; y++) t[y] = { '1': 5, '2': 3, '3': 3, '4': 4, '5': 6, '6': 6, '교담희망': 2, '교담비희망': 3 };
   return t;
 }
-/* 인사자문규정 제3조 기준 기본값 */
+/* 빛여울초 인사자문규정(2025.11.13. 개정, 2027학년도 적용) 제3조 기준 기본값 */
 function regulationRules() {
   return {
     missingMonths: 12, decimals: 1, roundPerYear: false,
@@ -1432,7 +1328,7 @@ function renderSetup() {
     <h2>관리자 계정 만들기</h2>
     <p class="desc">이 비밀번호가 곧 자료 암호화 열쇠입니다. 잊으면 자료를 되찾을 수 없으니 꼭 기억해 두세요.</p>
     <form id="setup-form" autocomplete="off" novalidate>
-      <div class="field"><label>학교 이름</label><input class="inp" name="school" placeholder="예) 샘플초등학교"></div>
+      <div class="field"><label>학교 이름</label><input class="inp" name="school" placeholder="예) 빛여울초등학교"></div>
       <div class="grid2"><div class="field"><label>관리자 아이디</label><input class="inp" name="id" autocomplete="username" placeholder="영문/숫자"></div>
       <div class="field"><label>표시 이름</label><input class="inp" name="name" placeholder="예) 교감"></div></div>
       ${pwFields('', 'admin')}
@@ -1694,7 +1590,7 @@ function renderSide() {
     const lb = S.state.settings.lastBackup;
     h += `<hr><div class="foot"><div id="save-st">${ic('check', 13)} 이 PC에 암호화 저장됨</div><div class="${lb ? '' : 'warn-txt'}">마지막 백업: <b>${lb ? esc(fmtTime(lb)) : '없음'}</b></div></div>`;
   }
-  if (APP.credit) h += `<div class="credit">${esc(APP.credit)}</div>`;
+  h += `<div class="credit">${esc(APP.credit)}</div>`;
   $('#side').innerHTML = h;
   $('#year-badge').textContent = `${curYear()}학년도 교내인사${curSchool() ? ' · ' + curSchool() : ''}`;
 }
@@ -2537,7 +2433,7 @@ async function importNeis(file) {
   audit(`NEIS 인사기록 불러오기: ${file.name} (갱신 ${upd}명, 추가 ${add}명)`);
   S.page = 'teachers-neis'; render(); toast(`NEIS 인사기록을 반영했습니다. (갱신 ${upd}명 · 추가 ${add}명)`);
 }
-async function exportXlsx(pw) {
+async function exportXlsx() {
   const st = S.state, c = computeAll(st), ys = st.settings.years, title = `${curYear()}학년도 ${curSchool()} 교내인사`;
   // 1) 기초자료 일람표: 인쇄와 같은 칸 (부장대상·원로교사·전입교사·보류 칸 없음), 머리글 색, 하위 메뉴마다 굵은 세로선
   const gcols = gridCols(ys).filter(c => !c.chk), T = st.teachers.filter(t => String(t.name ?? '').trim());
@@ -2561,9 +2457,8 @@ async function exportXlsx(pw) {
     { name: '인사점수', rows: scores, kinds: ['title', 'head'], freeze: 2 },
     { name: '부장순위', rows: bj, kinds: bjKinds, freeze: 1 },
   ]);
-  const locked = await encryptOffice(new Uint8Array(await blob.arrayBuffer()), pw);
-  download(locked, `${st.settings.year}학년도 ${st.settings.school} 교내인사 (${today()}).xlsx`);
-  audit('엑셀 내보내기 (관리자 비밀번호로 잠금)'); toast('엑셀 파일을 내려받았습니다. 열 때 관리자 비밀번호를 넣으세요.');
+  download(blob, `${st.settings.year}학년도 ${st.settings.school} 교내인사 (${today()}).xlsx`);
+  audit('엑셀 내보내기'); toast('엑셀 파일을 내려받았습니다.');
 }
 /* 부장순위 인쇄: 모든 그룹 표의 칸 너비를 똑같이 (순위·연번·이름·인사점수·근무경력점·부장 근무월·총경력·생년월일·비고) — 머리글이 한 줄에 들어가는 너비, 나머지는 비고로 */
 const BJ_PR_COLS = `<colgroup>${[5, 15, 9, 7, 8, 8, 8, 13, 27].map(w => `<col style="width:${w}%">`).join('')}</colgroup>`;
@@ -2752,7 +2647,7 @@ const ACTIONS = {
   'del-account': el => delAccount(el.dataset.id),
   home: () => go(isAdmin() ? 'guide' : isReader() ? 'scores' : 'v-guide'),   // 왼쪽 위 로고·이름: 첫 화면(사용설명서)
   'export-hwpx': async () => { if (!S.state.teachers.length) return toast('내보낼 자료가 없습니다.', true); if (await confirmBox('한글 파일 내려받기', '한글 파일은 <b>암호화되지 않습니다</b>. 개인정보 관리에 주의하겠습니까?', '내려받기')) exportHwpx(); },
-  'export-xlsx': async () => { if (!S.state.teachers.length) return toast('내보낼 자료가 없습니다.', true); const pw = await askAdminPw('엑셀 파일 내려받기', '엑셀'); if (pw) await exportXlsx(pw); },
+  'export-xlsx': async () => { if (!S.state.teachers.length) return toast('내보낼 자료가 없습니다.', true); await exportXlsx(); },   // 비밀번호 없이 바로 내려받기
   'do-print': () => doPrint(),
   backup: async () => {
     S.state.settings.lastBackup = new Date().toISOString(); audit('백업 파일 저장'); S.state.settings.changedAfterBackup = false; await flush();
@@ -2885,7 +2780,7 @@ function applySearch(el) {
 function makeSampleState() {
   let seed = 20271; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648; const pick = a => a[Math.floor(rnd() * a.length)]; const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
   const NAMES = ['이순신', '장영실', '정약용', '신사임당', '김구', '안중근', '유관순', '윤봉길', '이황', '이이', '허준', '김정호', '정몽주', '강감찬', '을지문덕', '김유신', '계백', '최무선', '박지원', '김홍도', '신윤복', '허난설헌', '홍범도', '김좌진', '안창호', '주시경', '방정환', '한용운', '윤동주', '김만덕'];   // 우리나라 위인 30명 (생년월일·경력 등은 모두 가짜)
-  const st = defaultState('샘플초등학교'), ys = st.settings.years;
+  const st = defaultState('빛여울초등학교'), ys = st.settings.years;
   const roles = ['1학년부장', '2학년부장', '3학년부장', '4학년부장', '5학년부장', '6학년부장', '교무부장', '연구부장', '생활부장', '체육부장', '정보과학부장'];
   const duties = ['학습지원', '생활교육', '방과후', '정보', '과학', '체육', '보건', '안전', '환경', '도서', '교육과정', '평가'];
   for (let i = 0; i < 30; i++) {
