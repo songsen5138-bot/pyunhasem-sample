@@ -113,12 +113,23 @@ button,input,select,textarea{font:inherit;color:inherit}
 .vu-row .inp.vu-date{flex:0 0 200px;width:200px;height:44px;font-size:15px;margin:0}
 .vu-row .btn.vu-btn{height:44px;margin:0}
 .vu-info{margin-top:12px;font-size:13px;color:var(--text2)}
+.vu-btns{display:flex;flex-direction:column;gap:8px}
+.pub-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}   /* 열람용 파일 배포: 두 글상자 나란히 */
+.pub-grid>.panel{margin:0}
+@media (max-width:1000px){.pub-grid{grid-template-columns:1fr}}
+.tbl.dtl-tbl th{white-space:normal;word-break:keep-all;padding:6px 6px;vertical-align:middle}
+.tbl.dtl-tbl thead tr:first-child th{border-bottom:1px solid var(--line)}
+.tbl.dtl-tbl{font-size:12.5px}
+.tbl.dtl-tbl :is(td,th){border-right:1px solid #eef2f7;padding:6px 4px;white-space:normal;word-break:keep-all}   /* 칸 안에서 줄바꿈 → 옆 스크롤 없게 */
+.tbl.dtl-tbl td.l{min-width:90px}
+.tbl.dtl-tbl thead th{position:static}
 .backup-nag{display:flex;align-items:center;gap:10px}.backup-nag>div{flex:1}
 .calc-flow{--calc-w:222px;display:flex;flex-wrap:wrap;align-items:stretch;gap:10px}   /* 네 카드 같은 너비 */
 .calc-group{position:relative;display:flex;align-items:stretch;gap:10px;border:2px dashed #fdba74;border-radius:16px;padding:22px 10px 10px}
 .calc-group-tag{position:absolute;top:-11px;left:14px;background:var(--orange-50);border:1px solid #fdba74;color:#9a3412;border-radius:999px;padding:1px 10px;font-size:12px}
 .calc-op{align-self:center;font-size:28px;font-weight:800;color:var(--muted);line-height:1}
-.calc-op.minus{color:#000}   /* 업무제로화 감점 앞 빼기 기호는 검정 */
+.calc-op.minus{color:#000}
+.calc-pair{display:flex;align-items:center;gap:inherit}   /* 빼기 기호와 업무제로화 감점 카드를 같은 줄에 */   /* 업무제로화 감점 앞 빼기 기호는 검정 */
 .calc-card{flex:0 0 var(--calc-w);width:var(--calc-w);text-align:center;font:inherit;cursor:pointer;border-radius:14px;padding:12px 10px;border:1px solid var(--line);background:#fff;border-top:4px solid var(--blue);transition:box-shadow .15s,transform .15s}
 .calc-card:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px)}
 .calc-card.b{border-top-color:var(--blue)} .calc-card.p{border-top-color:#a855f7} .calc-card.g{border-top-color:var(--green)} .calc-card.r{border-top-color:var(--red)}
@@ -312,7 +323,7 @@ textarea.inp{min-height:60px;resize:vertical}
 .seg button+button{border-left:1px solid var(--line2)}
 .seg button.on{background:var(--blue);color:#fff;font-weight:700}
 .seg button.on::before,.pseg button.on::before{content:'✓ '}   /* 색을 구분하기 어려워도 고른 쪽을 알 수 있게 */
-/* 인사점수표 머리글: 아래쪽 맞춤 → 정렬 표시(⇅)가 두 줄 머리글(보직교사 가산점)과 같은 높이에 */
+/* 인사점수표 머리글: 아래쪽 맞춤 → 정렬 표시(⇅)가 두 줄 머리글(가산점(보직교사))과 같은 높이에 */
 .score-tbl thead th{vertical-align:bottom}
 .score-tbl :is(td,th){padding-left:6px;padding-right:6px}   /* 칸 안쪽 여백을 줄여 옆 스크롤 없이 */
 .score-tbl td.l{white-space:normal;word-break:keep-all;overflow-wrap:anywhere;text-align:left;min-width:120px}   /* 비고: 길면 칸 안에서 줄바꿈 (옆 스크롤 없게) */
@@ -496,9 +507,20 @@ function toast(msg, err) {
   const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg;
   $('#toasts').appendChild(t); setTimeout(() => t.remove(), err ? 5000 : 2800);
 }
-function download(blob, name) {
+/* 파일 저장: 크롬·엣지는 '다른 이름으로 저장' 창을 띄우고 마지막에 저장한 폴더를 기억함 (처음 한 번 작업 폴더를 고르면 다음부터 그 폴더에서 열림).
+   그 기능이 없는 브라우저는 보통 내려받기(다운로드 폴더) */
+const SAVE_TYPES = { phs: ['교내인사 편하샘 백업', 'application/json'], xlsx: ['엑셀 파일', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'], hwpx: ['한글 파일', 'application/hwp+zip'], html: ['열람용 파일', 'text/html'] };
+async function download(blob, name) {
+  const ext = name.split('.').pop().toLowerCase(), ty = SAVE_TYPES[ext];
+  if (window.showSaveFilePicker && ty) {
+    try {
+      const h = await window.showSaveFilePicker({ id: 'pyunhasem-save', startIn: 'documents', suggestedName: name, types: [{ description: ty[0], accept: { [ty[1]]: ['.' + ext] } }] });
+      const w = await h.createWritable(); await w.write(blob); await w.close(); return true;
+    } catch (e) { if (e.name === 'AbortError') { toast('저장을 취소했습니다.'); return false; } }   // 그 밖의 오류는 보통 내려받기로
+  }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  return true;
 }
 function smartVal(v) { const s = String(v ?? '').trim(); if (s === '') return ''; return /^-?\d+(\.\d+)?$/.test(s) ? +s : s; }
 
@@ -801,10 +823,10 @@ function writeHwpx(docs) {
   return zipStore(files, 'application/hwp+zip');
 }
 /* 한글 파일 내용: 인쇄물과 같은 표 (인사점수표 · 부장순위 · 기초자료 일람표) */
-function exportHwpx() {
+async function exportHwpx() {
   const st = S.state, c = computeAll(st), title = `${curYear()}학년도 ${curSchool()} 교내인사`;
   // 인사점수: 인쇄와 같은 칸
-  const scores = { title: `${title} 인사점수`, blocks: [{ head: ['순위', '이름', '담임경력점', '보직교사가산점', '근무경력점', '업무제로화감점', '합계', '지원 불가 학년', '동점 처리', '비고'], widths: [5, 8, 10, 12, 10, 12, 6, 13, 8, 16], left: [9],
+  const scores = { title: `${title} 인사점수`, blocks: [{ head: ['순위', '이름', '담임경력점', '가산점(보직교사)', '근무경력점', '업무제로화감점', '합계', '지원 불가 학년', '동점 처리', '비고'], widths: [5, 8, 10, 12, 10, 12, 6, 13, 8, 16], left: [9],
     rows: c.ranked.filter(r => !r.pending).map(r => [r.rank ?? '-', r.name, r.homeroom, r.bojik, r.work, r.zero, r.total, restrictText(r), r.tieBy || '', noteWithTags(r, st.notes[r.id]?.score)]) }] };
   // 부장순위: 인쇄와 같은 그룹 · 같은 칸 (이름 옆 표시는 괄호로)
   const tags = r => [r.pending && '보류', r.invited && '초빙', r.principalIn && '학교장 전입교사', r.elder && '원로교사'].filter(Boolean).map(k => ` (${k})`).join('');
@@ -819,7 +841,7 @@ function exportHwpx() {
   const sub = c => c.grp || 'neis', thick = cols.map((c, i) => i > 0 && sub(c) !== sub(cols[i - 1]) ? i : -1).filter(i => i > 0);
   const teachers = { title: `${title} 기초자료 일람표`, landscape: true, blocks: [{ small: true, headFills: cols.map(c => TH_FILL[gridThCls(c)] || 'F1F5F9'), thick, head: cols.map(c => c.h.replace(/<br>/g, ' ')), widths: w.map(v => v / sum * 100), left: [cols.findIndex(c => c.f === 'note')], rows: T.map(t => cols.map(c => val(t, c))) }] };
   const d = new Date(), hm = `${String(d.getHours()).padStart(2, '0')}시 ${String(d.getMinutes()).padStart(2, '0')}분`;
-  download(writeHwpx([teachers, scores, bujang]), `${st.settings.year}학년도 교내인사 ${today()} ${hm}.hwpx`);
+  if (!(await download(writeHwpx([teachers, scores, bujang]), `${st.settings.year}학년도 교내인사 ${today()} ${hm}.hwpx`))) return;   // 저장 창에서 취소
   audit('한글 파일 내려받기 (개인정보 포함 평문 파일)'); toast('한글 파일을 내려받았습니다. 사용 후 삭제하세요.');
 }
 /* 엑셀 파일 만들기. sheet = { name, rows, kinds: 줄마다 'title'·'head'·'body'(없으면 첫 줄 머리글), headFills: 칸별 머리글 바탕색, thick: 굵은 세로선을 넣을 칸 번호, freeze: 고정할 줄 수 } */
@@ -926,7 +948,7 @@ const capv = (v, cap) => cap > 0 ? Math.min(v, cap) : v;
 
 /* 근무경력점: 월당 점수·상한점 칸이 비어 있으면 규정값 사용 (상한 0 = 상한 없음) */
 const WORK_DEF = { per: 0.2, cap: 7.2 };
-/* 보직교사 가산점: 월당 점수·합산 최대 칸이 비어 있으면 규정값 (합산 최대 0 = 제한 없음) */
+/* 가산점(보직교사): 월당 점수·합산 최대 칸이 비어 있으면 규정값 (합산 최대 0 = 제한 없음) */
 const BONUS_DEF = { per: 0.25, combo: 7 };
 /* 업무제로화 감점: 1회당 감점 칸이 비어 있으면 규정값 */
 const ZERO_DEF = { per: 0.5 };
@@ -968,8 +990,8 @@ const isElder = (t, st) => { if (t.elderIn != null) return !!t.elderIn; const bi
 const isTransfer = (t, st) => t.transferIn != null ? !!t.transferIn : String(t.inYear ?? '').trim() === String(st.settings.year % 100);
 /* 인사 점수 계산식(조립식): rules.formula = 블록 목록
    { t: 'item', k: homeroom|bojik|work|zero } · { t: 'op', v: + - * / } · { t: '(' } · { t: ')' } · { t: 'num', v: 숫자 }
-   비어 있으면 기본식(담임경력점 + 보직교사가산점 + 근무경력점 − 업무제로화감점). eval 없이 직접 계산 */
-const F_ITEMS = { homeroom: '담임경력점', bojik: '보직교사가산점', work: '근무경력점', zero: '업무제로화감점' };
+   비어 있으면 기본식(담임경력점 + 가산점(보직교사) + 근무경력점 − 업무제로화감점). eval 없이 직접 계산 */
+const F_ITEMS = { homeroom: '담임경력점', bojik: '가산점(보직교사)', work: '근무경력점', zero: '업무제로화감점' };
 const F_TONE = { homeroom: 'b', bojik: 'p', work: 'g', zero: 'r' };
 const F_OPS = { '+': '+', '-': '−', '*': '×', '/': '÷' };
 const DEFAULT_FORMULA = [{ t: 'item', k: 'homeroom' }, { t: 'op', v: '+' }, { t: 'item', k: 'bojik' }, { t: 'op', v: '+' }, { t: 'item', k: 'work' }, { t: 'op', v: '-' }, { t: 'item', k: 'zero' }];
@@ -1138,6 +1160,7 @@ function computeTeacher(t, st) {
     id: t.id, no: t.no, name: t.name, career: t.career, detail, issues,
     homeroom, hrRaw, bojik, bojikRaw, bojikMonths, bojikElig, comboNotes, work, workMonths, zero, zeroCount,
     total: rd(evalFormula(formulaProblem(formulaOf(R)) ? DEFAULT_FORMULA : formulaOf(R), { homeroom, bojik, work, zero })), age: bi?.age ?? null, birthNum: bi?.num ?? null, careerDays, schoolMonths: workMonths,
+    yearInfo: st.settings.years.map(y => ({ y, bj: t.bj?.[y] || null, bjElig: bjMonthsByYear[y] || 0, wk: wk[y] ?? '', zr: t.zr?.[y] || null })),   // 연도별 근거 표
     birth: t.birth, elder, bujang: !!t.bujang, pending: !!t.pending, invited: !!t.invited, principalIn: !!t.principalIn, transfer: isTransfer(t, st), restrict, restrictYears
   };
 }
@@ -1145,7 +1168,7 @@ const SORT_KEYS = {
   total: { label: '인사점수 합계 (높은 순)', val: r => r.total, dir: -1 },
   homeroom: { label: '담임경력점 (높은 순)', val: r => r.homeroom, dir: -1 },
   work: { label: '근무경력점 (높은 순)', val: r => r.work, dir: -1 },
-  bojik: { label: '보직교사가산점 (높은 순)', val: r => r.bojik, dir: -1 },
+  bojik: { label: '가산점(보직교사) (높은 순)', val: r => r.bojik, dir: -1 },
   zero: { label: '업무제로화감점 (적은 순)', val: r => r.zero, dir: 1 },
   bojikMonths: { label: '보직교사 근무월 (많은 순)', val: r => r.bojikMonths, dir: -1 },
   schoolMonths: { label: '본교 근무월 합계 (많은 순)', val: r => r.schoolMonths, dir: -1 },
@@ -1299,7 +1322,7 @@ async function lockNow(msg) {
 ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(ev => addEventListener(ev, () => { lastAct = Date.now(); }, { passive: true }));
 setInterval(() => {
   if (!S) return;
-  if (S.user.role === 'reader' && untilPassed(S.vault.accounts.find(a => a.id === S.user.id)?.until)) return lockNow('열람 기한이 지나 열람을 마쳤습니다.');
+  if (BIRTH_ROLES.includes(S.user.role) && untilPassed(S.vault.accounts.find(a => a.id === S.user.id)?.until)) return lockNow('열람 기한이 지나 열람을 마쳤습니다.');
 }, 5000);   // 자동 잠금 없음 (열람 기한만 확인)
 addEventListener('beforeunload', e => { if (saveTimer) { e.preventDefault(); e.returnValue = ''; } });
 
@@ -1307,6 +1330,28 @@ addEventListener('beforeunload', e => { if (saveTimer) { e.preventDefault(); e.r
    로그인 · 초기 설정 화면
    ===================================================================== */
 let pendingVault = null;
+let pendingBackup = null;   // 자료만 든 백업 파일: 새 관리자 계정을 만들면서 이 자료로 시작
+const BK_FMT = 'pyunhasem-backup';   // 백업 파일 형식 (자료만, 계정 목록은 넣지 않음)
+/* 백업 잠금: 백업할 때의 관리자 아이디 + 비밀번호로 만든 열쇠로 자료를 잠금 → 그 아이디·비밀번호를 넣어야 열림 */
+const bkKey = (id, pw, salt, iter) => kekFrom(`${String(id).trim().toLowerCase()}\n${pw}`, salt, iter);
+async function sealBackup(id, pw, state, name) {
+  const salt = rand(16), key = await bkKey(id, pw, salt, APP.iter);
+  return { format: BK_FMT, v: 2, enc: true, salt: b64(salt), iter: APP.iter, data: await seal(key, enc.encode(JSON.stringify(state)), 'backup'),
+    meta: { school: state.settings.school, year: state.settings.year, name, savedAt: new Date().toISOString() } };
+}
+/* 잠긴 백업 열기: 아이디·비밀번호를 물어 풀어 봄 → { state, id, pw } (취소하면 null). 예전 방식(잠금 없음) 백업은 묻지 않음 */
+function openBackupFile(v, fname) {
+  if (!v.enc) return Promise.resolve({ state: v.state });
+  return modal({ title: '백업 파일 열기', body: `<div style="font-size:14px;color:var(--text2);margin-bottom:12px"><b>${esc(fname || '')}</b> (${esc(v.meta?.school || '')}, 저장 ${esc(fmtTime(v.meta?.savedAt))})<br>이 백업을 만들 때의 <b>관리자 아이디와 비밀번호</b>를 넣으세요.</div>
+    <div class="field"><label>아이디</label><input class="inp" name="bid" autocomplete="username"></div>
+    <div class="field"><label>비밀번호</label><input class="inp" type="password" name="bpw" autocomplete="current-password"></div>`,
+    actions: [{ label: '취소', value: null }, { label: '열기', cls: 'primary', handler: async f => {
+      const id = f.elements.bid.value.trim().toLowerCase(), pw = f.elements.bpw.value;
+      if (!id || !pw) throw new Error('아이디와 비밀번호를 입력해 주세요.');
+      try { const state = JSON.parse(dec.decode(await unseal(await bkKey(id, pw, unb64(v.salt), v.iter), v.data, 'backup'))); return { state, id, pw }; }
+      catch { throw new Error('아이디 또는 비밀번호가 맞지 않습니다.'); }
+    } }] });
+}
 function authShell(inner, wide) {
   $('#root').innerHTML = `<div class="auth"><div class="auth-card ${wide ? 'wide' : ''}">
     <div class="auth-brand"><div class="logo-box">${ic('school', 24)}</div>${brandHTML()}</div>${inner}</div></div>`;
@@ -1326,9 +1371,10 @@ function renderWelcome(msg) {
 function renderSetup() {
   authShell(`
     <h2>관리자 계정 만들기</h2>
-    <p class="desc">이 비밀번호가 곧 자료 암호화 열쇠입니다. 잊으면 자료를 되찾을 수 없으니 꼭 기억해 두세요.</p>
+    ${pendingBackup ? `<div class="note info">${ic('file', 15)} 백업 파일의 자료(<b>${esc(pendingBackup.meta?.school || '')}</b>, 저장 ${esc(fmtTime(pendingBackup.meta?.savedAt))})로 시작합니다. 사용할 관리자 아이디·비밀번호를 새로 정하세요.</div>` : ''}
+    <p class="desc">이 비밀번호로 이 PC에 저장되는 자료를 잠급니다. 잊으면 백업 파일로 다시 시작해야 하니 꼭 기억해 두세요.</p>
     <form id="setup-form" autocomplete="off" novalidate>
-      <div class="field"><label>학교 이름</label><input class="inp" name="school" placeholder="예) 빛여울초등학교"></div>
+      <div class="field"><label>학교 이름</label><input class="inp" name="school" placeholder="예) 빛여울초등학교" value="${esc(pendingBackup?.meta?.school || pendingBackup?.state?.settings?.school || '')}"></div>
       <div class="grid2"><div class="field"><label>관리자 아이디</label><input class="inp" name="id" autocomplete="username" placeholder="영문/숫자"></div>
       <div class="field"><label>표시 이름</label><input class="inp" name="name" placeholder="예) 교감"></div></div>
       ${pwFields('', 'admin')}
@@ -1347,27 +1393,28 @@ function renderSetup() {
       btn.disabled = true; btn.textContent = '암호화 키 만드는 중…'; err.hidden = true;
       const dek = rand(32), rk = rand(32), keys = concat(dek, rk);
       const accounts = [await makeAccount(id, name, 'admin', pw, keys)];   // 복구 코드 기능 없음
-      const state = defaultState(school);
-      state.audit.push({ t: Date.now(), u: name, a: '암호화 저장소와 관리자 계정을 만들었습니다' });
+      const state = pendingBackup ? pendingBackup.state : defaultState(school);   // 백업 파일로 시작하면 그 자료
+      if (pendingBackup) state.settings.school = school;
+      state.audit.push({ t: Date.now(), u: name, a: pendingBackup ? '백업 파일의 자료로 새 관리자 계정을 만들었습니다' : '암호화 저장소와 관리자 계정을 만들었습니다' });
       const vault = { format: APP.fmt, v: APP.ver, kind: 'admin', accounts, data: null, results: null, meta: { school, created: new Date().toISOString() } };
       S = { vault, user: { id, name, role: 'admin' }, dek, rk, dataKey: await aesKey(dek), state, results: null, page: 'guide' };
       await persist();
       setLock({ fails: 0, until: 0, since: 0 });
+      if (pendingBackup) { pendingBackup = null; return startSession(S.vault, accounts[0], keys); }   // 자료 정리(예전 자료 맞춤)까지 거쳐 들어감
       if (DEV) try { sessionStorage.setItem(DEV_KEY, JSON.stringify({ id, keys: b64(keys) })); } catch {}
       enterApp();
     } catch (ex) { err.textContent = ex.message; err.hidden = false; btn.disabled = false; btn.innerHTML = `${ic('lock')} 암호화 저장소 만들기`; }
   });
 }
 function renderLogin(msg, recovery) {
-  const v = pendingVault, li = lockInfo(), locked = li.until > Date.now();
-  const byBirth = v.accounts.some(a => a.role === 'reader');
-  const rUntil = byBirth ? (v.accounts.find(a => a.role === 'reader').until || v.meta?.until) : '', expired = untilPassed(rUntil);
-  const kindTxt = v.kind === 'viewer' ? (byBirth ? '열람용 파일 (읽기 전용)' : '열람용 파일 (결과 조회 전용)') : '관리자 자료';
+  const v = pendingVault;   // 로그인 실패 대기시간(잠금) 없음
+  const byBirth = v.accounts.some(a => BIRTH_ROLES.includes(a.role));
+  const rUntil = byBirth ? (v.accounts.find(a => BIRTH_ROLES.includes(a.role)).until || v.meta?.until) : '', expired = untilPassed(rUntil);
+  const kindTxt = v.kind === 'personal' ? '개인 인사점수 확인' : v.kind === 'viewer' ? (byBirth ? '전체 인사점수 확인' : '열람용 파일 (결과 조회 전용)') : '관리자 자료';
   authShell(`
     <div class="auth-meta" style="margin-top:16px">${ic('db', 14)} <b>${esc(v.meta?.school || '학교')}</b> · ${esc(kindTxt)}${v.meta?.savedAt ? `<br>저장 ${esc(fmtTime(v.meta.savedAt))}` : ''}</div>
     ${rUntil ? `<div class="auth-meta" style="margin-top:4px;background:var(--orange-50);border:1px solid #fed7aa;color:#9a3412">${ic('clock', 14)} 열람 기한: <b>${esc(fmtUntil(rUntil))}</b>까지</div>` : ''}
     ${expired ? `<div class="note danger">${ic('lock')} 열람 기한(${esc(fmtUntil(rUntil))})이 지나 더 이상 열람할 수 없습니다. 필요하면 관리자에게 새 열람용 파일을 요청하세요.</div>` : msg ? `<div class="note info">${esc(msg)}</div>` : ''}
-    ${locked ? `<div class="note danger">${ic('lock')} 로그인 실패가 반복되어 잠시 잠겼습니다. <span id="lock-left"></span></div>` : ''}
     <form id="login-form" autocomplete="off" novalidate>
       ${recovery ? `
         <h2>복구 코드로 로그인</h2><p class="desc">관리자 계정 생성 때 받은 20자리 복구 코드를 입력하세요.</p>
@@ -1379,33 +1426,27 @@ function renderLogin(msg, recovery) {
         <div class="field"><label>아이디</label><input class="inp" name="id" autocomplete="username"></div>
         <div class="field"><label>비밀번호</label><input class="inp" type="password" name="pw" autocomplete="current-password"></div>`}`}
       <div class="modal-err" id="login-err" hidden></div>
-      <button class="btn primary" type="submit" ${locked || expired ? 'disabled' : ''}>${ic('lock')} ${recovery ? '복구 코드로 열기' : '로그인'}</button>
+      <button class="btn primary" type="submit" ${expired ? 'disabled' : ''}>${ic('lock')} ${recovery ? '복구 코드로 열기' : '로그인'}</button>
     </form>
+    ${!EMBEDDED && !recovery ? `<button class="link" style="display:block;margin:14px auto 0;font-size:13px" data-act="new-start">새 관리자 계정으로 처음부터 시작</button>` : ''}
     <div class="auth-foot">
       ${recovery ? `<button class="link" data-act="go-login">← 아이디로 로그인</button>` : '<span></span>'}
     </div>`);
-  if (locked) {
-    const tick = () => { const s = Math.ceil((lockInfo().until - Date.now()) / 1000); const el = $('#lock-left'); if (!el) return; if (s <= 0) return renderLogin(msg, recovery); el.textContent = `${Math.floor(s / 60)}분 ${s % 60}초 후 다시 시도하세요.`; setTimeout(tick, 1000); };
-    tick();
-  }
   $('#login-form').addEventListener('submit', async e => {
     e.preventDefault(); const f = e.target, err = $('#login-err'), btn = $('button[type=submit]', f);
-    if (lockInfo().until > Date.now() || untilPassed(rUntil)) return;
+    if (untilPassed(rUntil)) return;
     const id = recovery ? '#recovery' : byBirth ? fv(f, 'id').replace(/\s/g, '') : fv(f, 'id').toLowerCase();
     const pw = recovery ? normRecovery(fv(f, 'code')) : byBirth ? f.elements.pw.value.replace(/\D/g, '') : f.elements.pw.value;
     if (!pw || (!recovery && !id)) { err.textContent = byBirth ? '이름과 생년월일 6자리를 입력해 주세요.' : '아이디와 비밀번호를 입력해 주세요.'; err.hidden = false; return; }
     btn.disabled = true; btn.textContent = '확인 중…'; err.hidden = true;
     // 교사 열람: 같은 이름(동명이인)이 여럿이면 차례로 맞춰 봄
-    const cands = byBirth && !recovery ? v.accounts.filter(a => a.role === 'reader' && a.name.replace(/\s/g, '') === id) : v.accounts.filter(a => a.id === id).slice(0, 1);
+    const cands = byBirth && !recovery ? v.accounts.filter(a => BIRTH_ROLES.includes(a.role) && a.name.replace(/\s/g, '') === id) : v.accounts.filter(a => a.id === id).slice(0, 1);
     let acct = null, keys = null;
     for (const a of cands) { try { keys = await openAccount(a, pw); acct = a; break; } catch { keys = null; } }
     if (!cands.length) { try { await kekFrom(pw, rand(16), APP.iter); } catch {} }   // 계정 존재 여부가 시간 차이로 드러나지 않게
     if (!keys) {
-      const o = lockInfo(); o.fails++; o.since = (o.since || 0) + 1;
-      if (o.fails >= 5) o.until = Date.now() + Math.min(60, 2 ** (o.fails - 5)) * 60000;
-      setLock(o);
-      if (o.until > Date.now()) return renderLogin(msg, recovery);
-      err.textContent = `${byBirth && !recovery ? '이름 또는 생년월일이' : `아이디 또는 ${recovery ? '복구 코드' : '비밀번호'}가`} 올바르지 않습니다. (${o.fails}회 실패${o.fails >= 3 ? ` · ${5 - o.fails}회 더 틀리면 잠깁니다` : ''})`;
+      const o = lockInfo(); o.fails++; o.since = (o.since || 0) + 1; o.until = 0; setLock(o);   // 실패 횟수만 셈 (대기시간 없음)
+      err.textContent = `${byBirth && !recovery ? '이름 또는 생년월일이' : `아이디 또는 ${recovery ? '복구 코드' : '비밀번호'}가`} 올바르지 않습니다.`;
       err.hidden = false; btn.disabled = false; btn.innerHTML = `${ic('lock')} ${recovery ? '복구 코드로 열기' : '로그인'}`; return;
     }
     try { await startSession(v, acct, keys); }
@@ -1486,6 +1527,10 @@ async function startSession(v, acct, keys, devResume) {
     state.teachers.forEach(t => { t.note = noteTokens(t.note).map(x => x.replace(/\s/g, '') === '학교장전입' ? '학교장 전입교사' : x).join(', '); Object.keys(FLAG_TAG).forEach(k => { if (t[k]) t.note = noteAddTag(t.note, FLAG_TAG[k]); }); });
     S = { vault: v, user: { id: acct.id, name: acct.name, role: 'admin', recovery: acct.id === '#recovery' }, dek, rk, dataKey, state, results, page: acct.id === '#recovery' ? 'security' : 'guide' };
     if (!devResume) audit(acct.id === '#recovery' ? '복구 코드로 로그인' : '로그인');
+  } else if (acct.role === 'self') {   // 개인 인사점수: 이 사람 몫으로 따로 잠근 자료만 풂
+    if (untilPassed(acct.until)) throw new Error('열람 기한이 지났습니다.');
+    const me = JSON.parse(dec.decode(await unseal(await aesKey(keys), v.persons[acct.id], `self|${acct.id}`)));
+    S = { vault: v, user: { id: acct.id, name: acct.name, role: 'self' }, me, results: null, page: 'me' };
   } else if (acct.role === 'reader') {
     if (untilPassed(acct.until)) throw new Error('열람 기한이 지났습니다.');
     const dataKey = await aesKey(keys.slice(0, 32));
@@ -1502,8 +1547,19 @@ async function startSession(v, acct, keys, devResume) {
 async function handleOpenFile(file) {
   let v;
   try { v = JSON.parse(await file.text()); } catch { return toast('파일을 읽을 수 없습니다.', true); }
-  if (v?.format !== APP.fmt || !Array.isArray(v.accounts)) return toast('교내인사 편하샘 백업/열람용 파일이 아닙니다.', true);
   const cur = await idb.get('vault');
+  if (v?.format === BK_FMT && (v.enc || v.state?.teachers)) {
+    const ob = await openBackupFile(v, file.name); if (!ob) return;
+    if (cur && !(await confirmBox('이 PC의 자료를 바꿀까요?', `이 PC에 저장된 <b>${esc(cur.meta?.school || '')}</b> 자료가 선택한 백업 파일의 자료로 <b>대체</b>됩니다.`, '바꾸기', true))) return;
+    if (!ob.id) { pendingBackup = v; return renderSetup(); }   // 예전 방식(잠금 없음) 백업: 새 관리자 계정을 정해서 시작
+    // 잠긴 백업: 백업할 때의 아이디·비밀번호로 이 PC의 관리자 계정을 만들고 바로 들어감
+    const dek = rand(32), rk = rand(32), keys = concat(dek, rk), name = v.meta?.name || ob.id;
+    const vault = { format: APP.fmt, v: APP.ver, kind: 'admin', accounts: [await makeAccount(ob.id, name, 'admin', ob.pw, keys)], data: null, results: null, meta: { school: ob.state.settings?.school, created: new Date().toISOString() } };
+    ob.state.audit = ob.state.audit || []; ob.state.audit.push({ t: Date.now(), u: name, a: `백업 파일로 시작: ${file.name}` });
+    S = { vault, user: { id: ob.id, name, role: 'admin' }, dek, rk, dataKey: await aesKey(dek), state: ob.state, results: null, page: 'guide' };
+    await persist(); return startSession(S.vault, vault.accounts[0], keys);
+  }
+  if (v?.format !== APP.fmt || !Array.isArray(v.accounts)) return toast('교내인사 편하샘 백업/열람용 파일이 아닙니다.', true);
   if (cur && !(await confirmBox('이 PC의 자료를 바꿀까요?', `이 PC에 저장된 <b>${esc(cur.meta?.school || '')}</b> 자료가 선택한 파일로 <b>대체</b>됩니다.<br>기존 자료를 백업하지 않았다면 취소하세요.`, '파일로 바꾸기', true))) return;
   await idb.set('vault', v); pendingVault = v;
   renderLogin(v.kind === 'viewer' ? (v.accounts.some(a => a.role === 'reader') ? '열람용 파일을 열었습니다. 이름과 생년월일 6자리로 로그인하세요.' : '열람용 파일을 열었습니다. 안내받은 열람 계정으로 로그인하세요.') : '파일을 열었습니다. 이 파일을 만들 때의 계정으로 로그인하세요.');
@@ -1558,12 +1614,15 @@ const NAV_VIEWER = [
 const isAdmin = () => S?.user.role === 'admin';
 /* 교사 열람(reader): 열람용 파일을 '이름 + 생년월일 6자리'로 열어 모든 자료를 읽기 전용으로 봄 */
 const isReader = () => S?.user.role === 'reader';
+/* 개인 인사점수 확인(self): 열람용 파일을 '이름 + 생년월일'로 열어 자기 점수 계산 근거만 봄 (자료는 사람마다 따로 잠금) */
+const isSelf = () => S?.user.role === 'self';
+const BIRTH_ROLES = ['reader', 'self'];   // 이름 + 생년월일로 로그인하는 계정
 const hasData = () => isAdmin() || isReader();   // 기초자료(state)를 가진 세션
 const READER_PAGES = new Set(['scores', 'bujang', 'teachers', ...TEACHER_VIEWS.map(v => v.id)]);   // 열람용에서 볼 수 있는 화면
 const READER_ACTS = new Set(['home', 'nav', 'lock', 'col-sort', 'col-sort-clear', 'score-sort', 'score-set', 'pend-view', 'detail', 'open-file']);   // 열람용: 보류·우선 순위 단추는 눌러 볼 수 있음(저장 안 됨)   // 인쇄(do-print)는 뺌   // 읽기 전용에서 쓸 수 있는 단추
 const birth6 = b => { const d = String(b ?? '').replace(/\D/g, ''); return d.length === 6 ? d : ''; };
-const curYear = () => hasData() ? S.state.settings.year : (S.results?.year || '');
-const curSchool = () => hasData() ? S.state.settings.school : (S.results?.school || S.vault.meta?.school || '');
+const curYear = () => hasData() ? S.state.settings.year : isSelf() ? S.me.year : (S.results?.year || '');
+const curSchool = () => hasData() ? S.state.settings.school : isSelf() ? S.me.school : (S.results?.school || S.vault.meta?.school || '');
 
 function enterApp() {
   $('#root').innerHTML = `
@@ -1571,14 +1630,14 @@ function enterApp() {
       <div class="tb-left" data-act="home" title="사용설명서로 가기"><div class="logo-box">${ic('school', 24)}</div>${brandHTML()}</div>
       <div class="tb-right"><span class="badge" id="year-badge"></span>${SAMPLE ? '<span class="badge" style="background:#fce7f3;color:#be185d" title="가짜 교사 30명으로 만든 샘플입니다. 바꾼 내용은 저장되지 않으며 새로고침하면 처음 상태로 돌아갑니다.">샘플 · 저장 안 됨</span>' : ''}${DEV ? '<span class="badge" style="background:#fef3c7;color:#92400e" title="localhost 미리보기 전용: 새로고침해도 로그인 유지. 나가기를 누르면 해제됩니다.">🛠 개발 모드</span>' : ''}
       <span class="spacer"></span>
-      <div class="who"><span class="chip">${ic('user', 15)} ${esc(S.user.name)} <span class="role ${S.user.role}">${isAdmin() ? '관리자' : isReader() ? '열람 (읽기 전용)' : '열람자'}</span></span>
-      <button class="btn sm" data-act="lock" title="${isReader() ? '열람 마치고 나가기' : '로그아웃 (자료 잠금)'}">${ic('logout', 15)} 나가기</button></div></div>
+      <div class="who"><span class="chip">${ic('user', 15)} ${esc(S.user.name)} <span class="role ${S.user.role}">${isAdmin() ? '관리자' : isReader() ? '열람 (읽기 전용)' : isSelf() ? '개인 인사점수' : '열람자'}</span></span>
+      <button class="btn sm" data-act="lock" title="${isReader() || isSelf() ? '열람 마치고 나가기' : '로그아웃 (자료 잠금)'}">${ic('logout', 15)} 나가기</button></div></div>
     </div></header>
     <div class="layout"><aside class="side" id="side"></aside><main class="main" id="main"></main></div>`;
   lastAct = Date.now(); if (S.page === 'scores') resetScoreView(); render();
 }
 function renderSide() {
-  const nav = isAdmin() ? NAV_ADMIN : isReader() ? NAV_ADMIN.filter(it => !it.id || ['teachers', 'scores', 'bujang'].includes(it.id)).filter((it, i, a) => !(it.sec && (!a[i + 1] || a[i + 1].sec))) : NAV_VIEWER;
+  const nav = isSelf() ? [{ sec: '개인 인사점수' }, { id: 'me', icon: 'chart', label: '내 인사점수' }] : isAdmin() ? NAV_ADMIN : isReader() ? NAV_ADMIN.filter(it => !it.id || ['teachers', 'scores', 'bujang'].includes(it.id)).filter((it, i, a) => !(it.sec && (!a[i + 1] || a[i + 1].sec))) : NAV_VIEWER;
   let h = '', first = true;
   for (const it of nav) {
     if (it.sec) { h += `${first ? '' : '<hr>'}<div class="sec">${esc(it.sec)}</div>`; first = false; continue; }
@@ -1596,8 +1655,9 @@ function renderSide() {
 }
 function render() {
   if (!S) return;
-  document.body.classList.toggle('no-print', isReader());   // 열람용: 브라우저 인쇄(Ctrl+P)도 빈 쪽으로
-  if (isReader() && !READER_PAGES.has(S.page)) S.page = 'scores';   // 열람용: 기초자료·인사점수·부장순위만
+  document.body.classList.toggle('no-print', isReader() || isSelf());   // 열람용: 브라우저 인쇄(Ctrl+P)도 빈 쪽으로
+  if (isReader() && !READER_PAGES.has(S.page)) S.page = 'scores';
+  if (isSelf()) S.page = 'me';   // 개인 인사점수: 자기 점수 계산 근거만   // 열람용: 기초자료·인사점수·부장순위만
   renderSide();
   const fn = PAGES[S.page] || PAGES[isAdmin() ? 'guide' : 'v-guide'];
   $('#main').innerHTML = fn();
@@ -1687,7 +1747,7 @@ const bjRows = st => st.settings.bjRows ||= (st.settings.bojikRoleList || DEFAUL
 const bjName = (row, y) => String(row[y] ?? row['*'] ?? '').trim();
 const nextYearOf = st => { const ys = st.settings.years || []; return ys.length ? String(Math.max(...ys.map(Number)) + 1).padStart(2, '0') : null; };   // 반영 학년도 다음 해(차년도)
 const bjRolesOf = (st, y) => [...new Set(bjRows(st).map(r => bjName(r, y)).filter(Boolean))];   // 그해 보직 명칭 목록 (기초자료 표의 선택 목록)
-/* 보직교사 가산점 인정 부서: 연도별 보직교사 구성에 있는 부장 명칭 중에서 고름 (저장은 쉼표로 이은 글자) */
+/* 가산점(보직교사) 인정 부서: 연도별 보직교사 구성에 있는 부장 명칭 중에서 고름 (저장은 쉼표로 이은 글자) */
 const bonusKeywords = R => String(R.bojik.keywords || '').split(/[,\s]+/).filter(Boolean);
 function bonusYearSel(st, y) {
   const sel = st.rules.bojik.kwByYear?.[y]; if (sel) return sel;
@@ -2043,7 +2103,7 @@ PAGES.rules = (sec) => {
       <div class="grid2">
       <div class="field"><label>월당 점수</label><input class="inp" type="number" step="any" min="0" data-bind="rules.work.per" data-type="numOpt" value="${esc(R.work.per ?? '')}" placeholder="직접입력"></div>
       <div class="field"><label>상한 (상한점 없을 경우 0 입력)</label><input class="inp" type="number" step="any" min="0" data-bind="rules.work.cap" data-type="numOpt" value="${esc(R.work.cap ?? '')}" placeholder="직접입력"></div></div></div>`,
-    bonus: `<div class="panel"><h2>${ic('award', 18)} 보직교사 가산점</h2><p class="desc">보직교사 가산점은 “근무월 3점 × 월당점수”로 계산 후 소수 둘째 자리에서 반올림하여 정합니다.</p>
+    bonus: `<div class="panel"><h2>${ic('award', 18)} 가산점(보직교사)</h2><p class="desc">가산점(보직교사)은 “근무월 3점 × 월당점수”로 계산 후 소수 둘째 자리에서 반올림하여 정합니다.</p>
       <div class="grid2"><div class="field"><label>월당 점수</label><input class="inp" type="number" step="any" min="0" data-bind="rules.bojik.per" data-type="numOpt" value="${esc(R.bojik.per ?? '')}" placeholder="직접입력"></div>
       <div class="field"><label>연도별 담임경력점 + 가산점 합산 최대</label><input class="inp" type="number" step="any" min="0" data-bind="rules.comboCap" data-type="numOpt" value="${esc(R.comboCap ?? '')}" placeholder="직접입력"><div class="hint">그해 담임경력점 + 그해 가산점에 적용 · 제한이 없으면 0 입력</div></div></div>
       <div class="field" style="margin-top:14px"><label>가산점 인정 보직교사 선택</label>
@@ -2066,12 +2126,12 @@ PAGES.rules = (sec) => {
           <div class="calc-group-tag">${bonusCombo(R) ? `해마다 두 점수 합쳐 최대 <b>${esc(bonusCombo(R))}점</b>` : '합산 상한 없음'}</div>
           ${calcCard('rules-hr', 'b', '담임경력점', '배정점 × 근무월수 ÷ 12', '')}
           <div class="calc-op">+</div>
-          ${calcCard('rules-bonus', 'p', '보직교사 가산점', `인정 부장 근무월 × <b>${esc(bonusPer(R))}</b>`, '')}
+          ${calcCard('rules-bonus', 'p', '가산점(보직교사)', `인정 부장 근무월 × <b>${esc(bonusPer(R))}</b>`, '')}
         </div>
         <div class="calc-op">+</div>
         ${calcCard('rules-work', 'g', '근무경력점', `본교 근무월 × <b>${esc(workPer(R))}</b>`, '')}
-        <div class="calc-op minus">−</div>
-        ${calcCard('rules-zero', 'r', '업무제로화 감점', `제로화 횟수 합계 × <b>${esc(zeroPer(R))}</b>`, '')}
+        <div class="calc-pair"><div class="calc-op minus">−</div>
+        ${calcCard('rules-zero', 'r', '업무제로화 감점', `제로화 횟수 합계 × <b>${esc(zeroPer(R))}</b>`, '')}</div>
       </div>
   </div>`,
   };
@@ -2092,7 +2152,7 @@ function rulesSummary(st) {
 /* 인사점수표 머리글 정렬: 글자는 가나다 순, 숫자는 큰 순(순위·연번은 작은 순). 다시 누르면 반대로, 한 번 더 누르면 해제(순위 순) */
 const SCORE_COLS = [
   { k: 'rank', h: '순위', t: 'num', asc: true }, { k: 'name', h: '이름', t: 'text' },
-  { k: 'homeroom', h: '담임경력점', t: 'num' }, { k: 'bojik', h: '보직교사<br>가산점', t: 'num' }, { k: 'work', h: '근무경력점', t: 'num' },
+  { k: 'homeroom', h: '담임경력점', t: 'num' }, { k: 'bojik', h: '가산점<br>(보직교사)', t: 'num' }, { k: 'work', h: '근무경력점', t: 'num' },
   { k: 'zero', h: '업무제로화<br>감점', t: 'num' }, { k: 'total', h: '합계', t: 'num' },
 ];
 function scoreViewSort(rows) {
@@ -2186,6 +2246,22 @@ async function buildViewerVault() {
   for (const [i, t] of list.entries()) accounts.push(await makeAccount(`r:${i + 1}`, String(t.name).trim(), 'reader', birth6(t.birth), S.dek, until));
   return { format: APP.fmt, v: APP.ver, kind: 'viewer', accounts, data: S.vault.data, results: null, meta: { school: st.settings.school, year: st.settings.year, until, savedAt: new Date().toISOString() } };
 }
+/* 개인 인사점수 확인 파일: 사람마다 열쇠를 따로 만들어 그 사람의 점수 계산 근거만 잠가 둠 (다른 사람 자료는 열 수 없음) */
+async function buildPersonalVault() {
+  const st = S.state, list = viewerList(st), until = st.settings.personalUntil;   // 개인 파일은 따로 정한 열람 기한
+  if (!list.length) { toast('생년월일이 입력된 선생님이 없습니다.', true); return null; }
+  if (!until) { toast('열람 기한을 먼저 정해 주세요.', true); return null; }
+  if (untilPassed(until)) { toast('열람 기한이 이미 지났습니다. 기한을 다시 정해 주세요.', true); return null; }
+  toast(`개인 인사점수 자료를 만드는 중입니다… (${list.length}명)`);
+  const c = computeAll(st), accounts = [], persons = {};
+  for (const [i, t] of list.entries()) {
+    const id = `s:${i + 1}`, key = rand(32), r = c.rows.find(x => x.id === t.id); if (!r) continue;
+    const me = { r, rank: c.ranked.find(x => x.id === t.id)?.rank ?? null, note: t.note || '', rules: st.rules, school: st.settings.school, year: st.settings.year };
+    persons[id] = await seal(await aesKey(key), enc.encode(JSON.stringify(me)), `self|${id}`);
+    accounts.push(await makeAccount(id, String(t.name).trim(), 'self', birth6(t.birth), key, until));
+  }
+  return { format: APP.fmt, v: APP.ver, kind: 'personal', accounts, persons, data: null, results: null, meta: { school: st.settings.school, year: st.settings.year, until, savedAt: new Date().toISOString() } };
+}
 const bjOrderPanel = st => `<div class="panel"><h2>${ic('award', 18)} 부장교사 임용 순서</h2>
       <ol class="bj-order">
         <li>초빙교사(학교장 전입교사 포함)를 초빙 분야 부장교사로 임용한다.</li>
@@ -2220,15 +2296,23 @@ function nextHopePanel(st) {
 }
 
 PAGES.publish = () => {
-  const T = S.state.teachers.filter(t => String(t.name ?? '').trim()), ok = viewerList(S.state), pend = T.filter(t => t.pending), noBirth = T.filter(t => !t.pending && !birth6(t.birth));
-  const canExp = ok.length && S.state.settings.viewerUntil && !untilPassed(S.state.settings.viewerUntil);
-  return `${ptitle('share', '열람용 파일 배포')}
-  <div class="panel">
-    <div class="vu-row"><label for="viewer-until" class="vu-lab">열람 기한</label>
-      <input class="inp vu-date" type="date" id="viewer-until" min="${today()}" value="${esc(S.state.settings.viewerUntil || '')}">
-      <button class="btn orange vu-btn" data-act="export-viewer-html" ${canExp ? '' : 'disabled'}>${ic('download', 16)} 열람용 파일 내려받기</button></div>
+  const st = S.state, T = st.teachers.filter(t => String(t.name ?? '').trim()), ok = viewerList(st), pend = T.filter(t => t.pending), noBirth = T.filter(t => !t.pending && !birth6(t.birth));
+  // 글상자 하나: 제목 · 열람 기한 · 파일 내려받기 · 로그인 가능 안내 (전체 / 개인 따로)
+  const box = (kind, title, key, btnCls) => {
+    const until = st.settings[key] || '', can = ok.length && until && !untilPassed(until);
+    return `<div class="panel"><h2>${ic(kind === 'personal' ? 'user' : 'users', 18)} ${title}</h2>
+    <div class="vu-row"><label for="until-${kind}" class="vu-lab">열람 기한</label>
+      <input class="inp vu-date" type="date" id="until-${kind}" data-until="${key}" min="${today()}" value="${esc(until)}">
+      <button class="btn ${btnCls} vu-btn" data-act="export-viewer-html" data-kind="${kind}" ${can ? '' : 'disabled'}>${ic('download', 16)} 파일 내려받기</button></div>
     <div class="vu-info">로그인 가능 <b>${ok.length}명</b> · 보류(전출) 교사 제외 <b>${pend.length}명</b>${noBirth.length ? ` · <span style="color:var(--red)">생년월일이 없어 로그인할 수 없는 선생님: <b>${noBirth.map(t => esc(t.name)).join(', ')}</b></span>` : ''}</div>
-    ${!S.state.settings.viewerUntil ? '<div class="hint" style="margin-top:8px"><b style="color:var(--red)">열람 기한을 정해야 파일을 내려받을 수 있습니다.</b></div>' : untilPassed(S.state.settings.viewerUntil) ? '<div class="hint" style="margin-top:8px"><b style="color:var(--red)">이미 지난 날짜입니다. 다시 정해 주세요.</b></div>' : ''}</div>`;
+    ${untilPassed(until) ? '<div class="hint" style="margin-top:8px"><b style="color:var(--red)">이미 지난 날짜입니다. 다시 정해 주세요.</b></div>' : ''}</div>`;
+  };
+  return `${ptitle('share', '열람용 파일 배포')}
+  <div class="note info" style="margin-bottom:16px">${ic('alert', 16)} <div>열람 기한을 정해야 파일을 내려받을 수 있습니다.<br>열람 기한까지만 조회 가능합니다.<br>이름과 생년월일로 접속합니다.</div></div>
+  <div class="pub-grid">
+  ${box('personal', '개인 인사점수 확인 파일', 'personalUntil', 'primary')}
+  ${box('all', '전체 인사점수 확인 파일', 'viewerUntil', 'orange')}
+  </div>`;   // 나란히: 왼쪽 개인, 오른쪽 전체
 };
 PAGES.print = () => {
   const admin = hasData();
@@ -2325,23 +2409,35 @@ async function editTeacher(id) {
   sortTeachers(st);
   audit(`기초자료 ${isNew ? '추가' : '수정'}: ${t.name}`); render(); toast('저장했습니다.');
 }
+/* 점수 계산 근거 (r = computeTeacher 결과, rank = 순위, R = 규칙) — 관리자 · 전체 열람의 창과 개인 인사점수 화면이 함께 씀 */
+function detailHTML(r, rank, R, showIssues = true, note = '') {   // note: 인사점수 표의 비고 (기초자료 비고)
+  const n3 = x => Math.round((+x || 0) * 1000) / 1000, bp = bonusPer(R), wp = workPer(R), zp = zeroPer(R);
+  const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  const rows = (r.yearInfo || []).map((yi, yIdx) => {
+    const first = yIdx === 0;   // 비고는 모든 연도를 합친 한 칸
+    const full = 2000 + +yi.y, hd = r.detail.filter(d => d.year === full);
+    const hrG = hd.map(d => d.grade && d.grade[0] !== '?' ? gradeLabel(d.grade) : d.raw || '').join(' / ');
+    const hrM = hd.map(d => d.months ?? '').join(' / '), hrB = hd.map(d => d.base ?? '').join(' / '), hrP = hd.reduce((a, d) => a + (d.pts || 0), 0);
+    const dept = String(yi.bj?.dept ?? '').trim(), bjM = yi.bj ? yi.bj.months ?? '' : '', hasBj = dept && dept !== '없음';
+    const wkM = yi.wk === '없음' ? 0 : yi.wk;
+    return `<tr><td>${full}</td><td>${esc(hrG)}</td><td>${esc(hrM)}</td><td>${esc(hrB)}</td><td class="nm"><b>${n3(hrP)}</b></td>
+      <td>${esc(dept)}</td><td>${hasBj ? (yi.bjElig ? 'O' : '×') : ''}</td><td>${esc(bjM)}</td><td>${hasBj ? bp : ''}</td><td class="nm"><b>${yi.bjElig ? n3(yi.bjElig * bp) : 0}</b></td>
+      <td>${esc(wkM)}</td><td>${wp}</td>
+      <td>${esc(yi.zr?.kind ?? '')}</td><td>${esc(yi.zr?.count ?? '')}</td><td>${zp}</td>
+      ${first ? `<td class="l" rowspan="${(r.yearInfo || []).length}" style="vertical-align:middle">${esc(note)}</td>` : ''}</tr>`;
+  }).join('');
+  return `<div class="stats">${stat('순위', rank ?? '-')}${stat('합계', `<span style="color:var(--blue-d)">${r.total}</span>`)}${r.age != null ? stat('기준일 나이', `${r.age}세 ${r.elder ? '<span class="pill k-eld">원로</span>' : ''}`) : ''}${stat('지원 불가 학년', r.restrict?.length ? esc(restrictText(r)) : '없음')}</div>
+    <div class="tbl-wrap" style="max-height:none"><table class="tbl dtl-tbl"><thead>
+      <tr><th rowspan="2">연도</th><th colspan="4">담임경력점 (${r.homeroom}점)</th><th colspan="5">가산점(보직) (${r.bojik}점)</th><th colspan="2">근무경력점<br>(${r.work}점)</th><th colspan="3">업무제로화감점<br>(${r.zero ? '−' + r.zero : 0}점)</th><th rowspan="2">비고</th></tr>
+      <tr><th>학년</th><th>근무월</th><th>배점</th><th>점수</th><th>경력</th><th>가산점</th><th>근무월</th><th>배점</th><th>점수</th><th>근무월</th><th>배점</th><th>구분</th><th>횟수</th><th>배점</th></tr>
+    </thead><tbody>${rows}</tbody></table></div>
+    ${showIssues && r.issues.length ? `<div class="note warn" style="margin-top:12px">${ic('alert')} <div><b>확인 필요</b><ul>${r.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div></div>` : ''}`;
+}
 async function showDetail(id) {
   const c = computeAll(S.state), r = c.rows.find(x => x.id === id), rk = c.ranked.find(x => x.id === id); if (!r) return;
-  const R = S.state.rules;
-  await modal({
-    title: `${r.name} — 점수 계산 근거`, wide: true, actions: [{ label: '닫기', cls: 'primary', value: true }],
-    body: `<div class="stats"><div class="stat"><div class="k">순위</div><div class="v">${rk?.rank ?? '-'}</div></div><div class="stat"><div class="k">합계</div><div class="v" style="color:var(--blue-d)">${r.total}</div></div>${r.age != null ? `<div class="stat"><div class="k">기준일 나이</div><div class="v">${r.age}세 ${r.elder ? '<span class="pill k-eld">원로</span>' : ''}</div></div>` : ''}</div>
-    <h4 style="margin:4px 0 8px">담임경력점 <span class="pill b">${r.hrRaw}점${r.hrRaw !== r.homeroom ? ` → ${r.homeroom}점 (합산 상한)` : ''}</span></h4>
-    <div class="tbl-wrap" style="max-height:none"><table class="tbl"><thead><tr><th>연도</th><th>담임</th><th>근무월</th><th>배점</th><th>점수</th><th>비고</th></tr></thead><tbody>
-    ${r.detail.map(d => `<tr><td>${d.year}</td><td>${esc(d.grade && d.grade[0] !== '?' ? gradeLabel(d.grade) : d.raw)}</td><td>${d.months ?? ''}</td><td>${d.base ?? ''}</td><td class="nm"><b>${Math.round(d.pts * 1000) / 1000}</b></td><td class="l" style="color:var(--muted)">${esc(d.note)}</td></tr>`).join('')}</tbody></table></div>
-    <div class="formula">가산점: 인정 부장 근무 ${r.bojikElig}개월${r.bojikElig !== r.bojikMonths ? ` (전체 보직 ${r.bojikMonths}개월 중)` : ''} × ${bonusPer(R)}${+R.bojik.cap ? ` (최대 ${R.bojik.cap})` : ''} = <b>${r.bojikRaw}</b><br>
-    ${r.comboNotes?.length ? `연도별 합산 최대 ${bonusCombo(R)}점 적용 — ${r.comboNotes.map(esc).join(' · ')} → 담임경력점 <b>${r.homeroom}</b>, 가산점 <b>${r.bojik}</b><br>` : ''}
-    ${r.restrict.length ? `지원 불가 학년(제18조): <b>${r.restrict.map(g => `${g}학년(${(r.restrictYears?.[g] || []).join(',')})`).join(', ')}</b><br>` : ''}
-    근무경력점: ${r.workMonths}개월(본교근무) × ${workPer(R)}${workCap(R) ? ` (최대 ${workCap(R)})` : ''} = <b>${r.work}</b><br>
-    업무제로화감점: ${r.zeroCount}회 × ${zeroPer(R)}${+R.zero.cap ? ` (최대 ${R.zero.cap})` : ''} = <b>−${r.zero}</b></div>
-    ${r.issues.length ? `<div class="note warn" style="margin-top:12px">${ic('alert')} <div><b>확인 필요</b><ul>${r.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul></div></div>` : ''}`
-  });
+  await modal({ title: `${r.name} — 점수 계산 근거`, wide: true, actions: [{ label: '닫기', cls: 'primary', value: true }], body: detailHTML(r, rk?.rank, S.state.rules, true, tNote(id)) });
 }
+PAGES.me = () => `${ptitle('chart', `${S.me.r.name} 선생님 인사점수`, `${esc(S.me.school)} ${esc(S.me.year)}학년도`)}<div class="panel">${detailHTML(S.me.r, S.me.rank, S.me.rules, false, S.me.note || '')}</div>`;
 async function importXlsx(file) {
   let wb;
   try { wb = await readXlsx(await file.arrayBuffer()); } catch (e) { return toast('엑셀을 읽지 못했습니다: ' + e.message, true); }
@@ -2441,7 +2537,7 @@ async function exportXlsx() {
   const sub = c => c.grp || 'neis', thick = gcols.map((c, i) => i > 0 && sub(c) !== sub(gcols[i - 1]) ? i : -1).filter(i => i > 0);
   const base = [[`${title} 기초자료 일람표`], gcols.map(c => c.h.replace(/<br>/g, ' ')), ...T.map(t => gcols.map(c => gval(t, c)))];
   // 2) 인사점수: 인쇄와 같은 칸
-  const scores = [[`${title} 인사점수`], ['순위', '이름', '담임경력점', '보직교사가산점', '근무경력점', '업무제로화감점', '합계', '지원 불가 학년', '동점 처리', '비고'],
+  const scores = [[`${title} 인사점수`], ['순위', '이름', '담임경력점', '가산점(보직교사)', '근무경력점', '업무제로화감점', '합계', '지원 불가 학년', '동점 처리', '비고'],
     ...c.ranked.filter(r => !r.pending).map(r => [r.rank ?? '-', r.name, r.homeroom, r.bojik, r.work, r.zero, r.total, restrictText(r), r.tieBy || '', noteWithTags(r, st.notes[r.id]?.score)])];
   // 3) 부장순위: 인쇄와 같은 그룹 · 같은 칸 (이름 옆 표시는 괄호로)
   const tags = r => [r.pending && '보류', r.invited && '초빙', r.principalIn && '학교장 전입교사', r.elder && '원로교사'].filter(Boolean).map(k => ` (${k})`).join('');
@@ -2457,7 +2553,7 @@ async function exportXlsx() {
     { name: '인사점수', rows: scores, kinds: ['title', 'head'], freeze: 2 },
     { name: '부장순위', rows: bj, kinds: bjKinds, freeze: 1 },
   ]);
-  download(blob, `${st.settings.year}학년도 ${st.settings.school} 교내인사 (${today()}).xlsx`);
+  if (!(await download(blob, `${st.settings.year}학년도 ${st.settings.school} 교내인사 (${today()}).xlsx`))) return;
   audit('엑셀 내보내기'); toast('엑셀 파일을 내려받았습니다.');
 }
 /* 부장순위 인쇄: 모든 그룹 표의 칸 너비를 똑같이 (순위·연번·이름·인사점수·근무경력점·부장 근무월·총경력·생년월일·비고) — 머리글이 한 줄에 들어가는 너비, 나머지는 비고로 */
@@ -2490,7 +2586,7 @@ function doPrint() {
   }
   if (pick.includes('scores')) {
     const rows = (admin ? c.ranked.map(r => ({ ...r, note: notes[r.id]?.score || '' })) : (S.results?.scores || [])).filter(r => !r.pending);   // 보류 교사는 인쇄하지 않음
-    h += `<section class="pr-sec"><h1>${esc(title)} 인사점수</h1>${meta}<table class="ptbl"><thead><tr><th>순위</th><th>이름</th><th>담임경력점</th><th>보직교사가산점</th><th>근무경력점</th><th>업무제로화감점</th><th>합계</th><th>지원 불가 학년</th><th>동점 처리</th><th>비고</th></tr></thead><tbody>
+    h += `<section class="pr-sec"><h1>${esc(title)} 인사점수</h1>${meta}<table class="ptbl"><thead><tr><th>순위</th><th>이름</th><th>담임경력점</th><th>가산점(보직교사)</th><th>근무경력점</th><th>업무제로화감점</th><th>합계</th><th>지원 불가 학년</th><th>동점 처리</th><th>비고</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td>${r.rank ?? '-'}</td><td>${esc(r.name)}</td><td>${r.homeroom}</td><td>${r.bojik}</td><td>${r.work}</td><td>${r.zero}</td><td><b>${r.total}</b></td><td>${esc(restrictText(r))}</td><td>${esc(r.tieBy || '')}</td><td style="text-align:left">${prNote(r, r.note)}</td></tr>`).join('')}</tbody></table></section>`;
   }
   // 부장순위 인쇄: 화면 표와 같은 내용 (연번 · 차년도 부장 희망은 뺌). 이름 옆 표시도 화면처럼
@@ -2571,7 +2667,12 @@ async function delAccount(id) {
 }
 
 const ACTIONS = {
-  'go-setup': () => renderSetup(), 'go-welcome': () => renderWelcome(), 'go-login': () => renderLogin(),
+  'go-setup': () => { pendingBackup = null; renderSetup(); },
+  'new-start': async () => {   // 로그인 화면: 이 PC의 자료 대신 새 관리자 계정으로 시작 (계정을 만들 때 바뀜, 그 전에는 그대로)
+    const cur = pendingVault;
+    if (!(await confirmBox('처음부터 시작', `이 PC에 저장된 <b>${esc(cur?.meta?.school || '')}</b> 자료 대신 <b>빈 자료</b>로 새로 시작합니다.<br>새 관리자 계정을 만드는 순간 기존 자료는 <b>지워집니다</b>. 필요한 자료는 먼저 백업해 두세요.<br><span style="color:var(--muted)">계정을 만들기 전에 「← 처음으로」를 누르면 그대로 남습니다.</span>`, '새로 시작', true))) return;
+    pendingBackup = null; renderSetup();
+  }, 'go-welcome': async () => { pendingBackup = null; pendingVault = await idb.get('vault'); pendingVault ? renderLogin() : renderWelcome(); }, 'go-login': () => renderLogin(),
   'open-file': () => $('#f-open').click(),
   nav: el => go(el.dataset.page),
   lock: async () => {   // 나가기: 마지막 백업 뒤에 바뀐 것이 있으면 백업할지 물어봄
@@ -2635,24 +2736,38 @@ const ACTIONS = {
     sortTeachers(st); audit(`기초자료 선택 삭제 ${del.length}명: ${del.map(t => t.name).join(', ')}`); render(); toast(`${del.length}명을 삭제했습니다.`);
   },
   detail: el => showDetail(el.dataset.id),
-  'export-viewer-html': async () => {
-    const v = await buildViewerVault(); if (!v) return;
+  'export-viewer-html': async el => {
+    const personal = el?.dataset.kind === 'personal';
+    const v = personal ? await buildPersonalVault() : await buildViewerVault(); if (!v) return;
     const i = PAGE_SRC.indexOf('<script>'); if (i < 0) return toast('프로그램 원본을 찾지 못했습니다.', true);
     const tag = `<script type="application/json" id="${EMBED_ID}">${JSON.stringify(v).replace(/</g, '\\u003c')}<\/script>\n`;
-    download(new Blob([PAGE_SRC.slice(0, i) + tag + PAGE_SRC.slice(i)], { type: 'text/html' }), `${S.state.settings.year}학년도 교내인사 열람용 (${today()}).html`);
-    audit(`열람용 HTML 내보내기 (교사 ${v.accounts.length}명, 이름+생년월일 열람, 기한 ${v.meta.until}까지)`); toast('열람용 파일을 내려받았습니다. 이 파일 하나만 선생님들께 보내면 됩니다.');
+    if (!(await download(new Blob([PAGE_SRC.slice(0, i) + tag + PAGE_SRC.slice(i)], { type: 'text/html' }), `${S.state.settings.year}학년도 교내인사 ${personal ? '개인 인사점수 확인' : '전체 인사점수 확인'} (${today()}).html`))) return;
+    audit(`${personal ? '개인' : '전체'} 인사점수 확인 파일 내보내기 (교사 ${v.accounts.length}명, 이름+생년월일, 기한 ${v.meta.until}까지)`); toast(`${personal ? '개인' : '전체'} 인사점수 확인 파일을 내려받았습니다. 이 파일 하나만 선생님들께 보내면 됩니다.`);
   },
   'reset-pw': el => resetPw(el.dataset.id),
   'change-id': () => changeId(),
   'del-account': el => delAccount(el.dataset.id),
-  home: () => go(isAdmin() ? 'guide' : isReader() ? 'scores' : 'v-guide'),   // 왼쪽 위 로고·이름: 첫 화면(사용설명서)
-  'export-hwpx': async () => { if (!S.state.teachers.length) return toast('내보낼 자료가 없습니다.', true); if (await confirmBox('한글 파일 내려받기', '한글 파일은 <b>암호화되지 않습니다</b>. 개인정보 관리에 주의하겠습니까?', '내려받기')) exportHwpx(); },
+  home: () => go(isAdmin() ? 'guide' : isReader() ? 'scores' : isSelf() ? 'me' : 'v-guide'),   // 왼쪽 위 로고·이름: 첫 화면(사용설명서)
+  'export-hwpx': async () => { if (!S.state.teachers.length) return toast('내보낼 자료가 없습니다.', true); if (await confirmBox('한글 파일 내려받기', '한글 파일은 <b>암호화되지 않습니다</b>. 개인정보 관리에 주의하겠습니까?', '내려받기')) await exportHwpx(); },
   'export-xlsx': async () => { if (!S.state.teachers.length) return toast('내보낼 자료가 없습니다.', true); await exportXlsx(); },   // 비밀번호 없이 바로 내려받기
   'do-print': () => doPrint(),
   backup: async () => {
-    S.state.settings.lastBackup = new Date().toISOString(); audit('백업 파일 저장'); S.state.settings.changedAfterBackup = false; await flush();
-    download(new Blob([JSON.stringify(S.vault)], { type: 'application/json' }), `교내인사 편하샘 백업 ${today()} ${(d => `${String(d.getHours()).padStart(2, '0')}시 ${String(d.getMinutes()).padStart(2, '0')}분`)(new Date())}.phs`);   // 파일 이름에 ':'는 못 씀
-    render(); toast('암호화된 백업 파일을 저장했습니다.');
+    const acct = S.vault.accounts.find(x => x.id === S.user.id);
+    const pw = await modal({ title: '백업 파일 만들기', body: `<div style="font-size:14px;color:var(--text2);margin-bottom:12px">백업 파일은 <b>관리자 아이디(${esc(S.user.id)})와 비밀번호</b>로 잠급니다.<br>나중에 백업을 열 때 같은 아이디와 비밀번호를 넣어야 합니다.</div>
+      <div class="field"><label>관리자 비밀번호</label><input class="inp" type="password" name="pw" autocomplete="current-password"></div>`,
+      actions: [{ label: '취소', value: null }, { label: '백업 만들기', cls: 'primary', handler: async f => {
+        const v = f.elements.pw.value; if (!v) throw new Error('비밀번호를 입력해 주세요.');
+        if (acct) { try { await openAccount(acct, v); } catch { throw new Error('비밀번호가 맞지 않습니다.'); } }
+        return v;
+      } }] });
+    if (!pw) return;
+    const name = `교내인사 편하샘 백업 ${today()} ${(d => `${String(d.getHours()).padStart(2, '0')}시 ${String(d.getMinutes()).padStart(2, '0')}분`)(new Date())}.phs`;
+    const sv = S.state.settings, prev = [sv.lastBackup, sv.changedAfterBackup];
+    sv.lastBackup = new Date().toISOString(); sv.changedAfterBackup = false;
+    const ok = await download(new Blob([JSON.stringify(await sealBackup(S.user.id, pw, S.state, S.user.name))], { type: 'application/json' }), name);   // 자료를 아이디+비밀번호로 잠가 저장
+    if (!ok) { [sv.lastBackup, sv.changedAfterBackup] = prev; return; }   // 저장 창에서 취소하면 백업 안 한 것으로
+    audit('백업 파일 저장'); await flush();
+    render(); toast(`백업 파일을 저장했습니다. 열 때 아이디(${S.user.id})와 비밀번호가 필요합니다.`);
   },
   restore: () => $('#f-restore').click(),
 };
@@ -2660,14 +2775,15 @@ const ACTIONS = {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el || el.disabled) return;
   if (isReader() && !READER_ACTS.has(el.dataset.act)) return;   // 읽기 전용
+  if (isSelf() && !['home', 'nav', 'lock'].includes(el.dataset.act)) return;   // 개인 인사점수: 보기만
   const fn = ACTIONS[el.dataset.act]; if (fn) { e.preventDefault(); Promise.resolve(fn(el, e)).catch(ex => toast(ex.message || String(ex), true)); }
 });
 function setPath(obj, path, val) { const ks = path.split('.'); let o = obj; ks.slice(0, -1).forEach(k => o = o[k]); o[ks[ks.length - 1]] = val; }
 document.addEventListener('change', async e => {
   const el = e.target;
-  if (el.id === 'viewer-until' && isAdmin()) {
-    S.state.settings.viewerUntil = el.value || ''; markDirty();
-    audit(`열람 기한 ${el.value ? `${el.value}까지로 설정` : '지움'}`); return render();
+  if (el.dataset.until && isAdmin()) {   // 열람 기한: 전체(viewerUntil) · 개인(personalUntil) 따로
+    S.state.settings[el.dataset.until] = el.value || ''; markDirty();
+    audit(`${el.dataset.until === 'personalUntil' ? '개인' : '전체'} 인사점수 확인 파일 열람 기한 ${el.value ? `${el.value}까지로 설정` : '지움'}`); return render();
   }
   if (el.matches('input[type=file][data-file]')) {
     const f = el.files[0]; el.value = ''; if (!f) return;
@@ -2676,7 +2792,14 @@ document.addEventListener('change', async e => {
     if (el.dataset.file === 'open') return handleOpenFile(f);
     if (el.dataset.file === 'restore') {
       let v; try { v = JSON.parse(await f.text()); } catch { return toast('파일을 읽을 수 없습니다.', true); }
-      if (v?.format !== APP.fmt || v.kind !== 'admin' || !v.data) return toast('관리자 백업 파일이 아닙니다.', true);
+      if (v?.format === BK_FMT && (v.enc || v.state?.teachers)) {   // 새 방식 백업: 지금 아이디·비밀번호는 그대로 두고 자료만 바꿈
+        const ob = await openBackupFile(v, f.name); if (!ob) return;
+        if (!(await confirmBox('백업 파일로 복원', `<b>${esc(f.name)}</b> (${esc(v.meta?.school || '')}, 저장 ${esc(fmtTime(v.meta?.savedAt))})<br>현재 자료가 이 파일의 자료로 <b>대체</b>됩니다. 관리자 아이디·비밀번호는 바뀌지 않습니다.`, '복원', true))) return;
+        clearTimeout(saveTimer); saveTimer = null;
+        S.state = ob.state; audit(`백업 파일로 복원: ${f.name}`); await persist(); S = null;
+        try { sessionStorage.setItem('phs_msg', '복원했습니다. 지금 쓰는 아이디·비밀번호로 다시 로그인하세요.'); } catch {} location.reload(); return;
+      }
+      if (v?.format !== APP.fmt || v.kind !== 'admin' || !v.data) return toast('관리자 백업 파일이 아닙니다.', true);   // 예전 방식(암호화) 백업: 그때의 계정과 함께 복원
       if (!(await confirmBox('백업 파일로 복원', `<b>${esc(f.name)}</b> (${esc(v.meta?.school || '')}, 저장 ${esc(fmtTime(v.meta?.savedAt))})<br>현재 자료가 이 파일로 <b>대체</b>되고 다시 로그인해야 합니다.`, '복원', true))) return;
       audit(`백업 파일로 복원: ${f.name}`); await flush(); clearTimeout(saveTimer); saveTimer = null;
       await idb.set('vault', v); S = null; try { sessionStorage.setItem('phs_msg', '복원했습니다. 백업 당시의 계정으로 로그인하세요.'); } catch {} location.reload();
@@ -2812,7 +2935,7 @@ function makeSampleState() {
     st.teachers.push(t);
   }
   st.audit.push({ t: Date.now(), u: '샘플', a: '샘플 자료(가짜 교사 30명)로 시작했습니다' });
-  st.settings.viewerUntil = '2027-02-28';
+  st.settings.viewerUntil = '2027-02-28'; st.settings.personalUntil = '2027-02-28';
   st.settings.lastBackup = new Date().toISOString(); st.settings.changedAfterBackup = false; st.settings.bjNoneFilled = true; st.settings.wkFilled = true; st.settings.noneFilled2 = true;
   return st;
 }
